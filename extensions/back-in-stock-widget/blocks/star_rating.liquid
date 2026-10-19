@@ -1,0 +1,107 @@
+
+{% assign current_variant = product.selected_or_first_available_variant %}
+
+<div
+  class="back-in-stock-widget"
+  data-product-id="{{ product.id }}"
+  data-variant-id="{{ current_variant.id }}"
+>
+  <h3 class="back-in-stock-widget__heading">
+    {{ block.settings.heading | escape }}
+  </h3>
+
+  <p class="back-in-stock-widget__description">
+    {{ block.settings.description | escape }}
+  </p>
+
+  <form class="back-in-stock-widget__form">
+    <label for="back-in-stock-email-{{ block.id }}">
+      Email address
+    </label>
+
+    <input
+      id="back-in-stock-email-{{ block.id }}"
+      type="email"
+      name="email"
+      placeholder="you@example.com"
+      autocomplete="email"
+      required
+    >
+
+    <button type="submit">
+      {{ block.settings.button_text | escape }}
+    </button>
+
+    <p class="back-in-stock-widget__message" role="status" aria-live="polite"></p>
+  </form>
+</div>
+
+<style>
+  .back-in-stock-widget {
+    margin: 20px 0;
+    padding: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+  }
+
+  .back-in-stock-widget__heading {
+    margin: 0 0 8px;
+    font-size: 20px;
+  }
+
+  .back-in-stock-widget__description {
+    margin: 0 0 16px;
+  }
+
+  .back-in-stock-widget__form {
+    display: grid;
+    gap: 10px;
+  }
+
+  .back-in-stock-widget__form input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+  }
+
+  .back-in-stock-widget__form button {
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .back-in-stock-widget__message {
+    margin: 0;
+  }
+</style>
+
+{% schema %}
+{
+  "name": "Back in stock",
+  "target": "section",
+  "javascript": "back-in-stock.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Notify me when available"
+    },
+    {
+      "type": "text",
+      "id": "description",
+      "label": "Description",
+      "default": "Enter your email and we'll let you know when this item is back in stock."
+    },
+    {
+      "type": "text",
+      "id": "button_text",
+      "label": "Button text",
+      "default": "Notify me"
+    }
+  ]
+}
+{% endschema %}
