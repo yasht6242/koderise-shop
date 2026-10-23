@@ -59,3 +59,4 @@ automatically_update_urls_on_dev = true
 url = "/proxy"
 prefix = "apps"
 subpath = "back-in-stock"
+# Trigger development preview refresh

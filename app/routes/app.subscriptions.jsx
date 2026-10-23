@@ -4,6 +4,10 @@ import { Form, useActionData, useLoaderData, useNavigation } from "react-router"
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import {
+  getSubscriptionCreateBlock,
+  isBackInStockEnabled,
+} from "../services/shop-settings.server";
 
 export const loader = async ({ request }) => {
   const { admin, session } = await authenticate.admin(request);
@@ -62,9 +66,17 @@ export const loader = async ({ request }) => {
       "Variant unavailable",
   }));
 
+  let backInStockEnabled = false;
+  try {
+    backInStockEnabled = await isBackInStockEnabled(db, session.shop);
+  } catch {
+    backInStockEnabled = false;
+  }
+
   return {
     products: result.data.products.nodes,
     subscriptions,
+    backInStockEnabled,
   };
 };
 
@@ -104,6 +116,14 @@ export const action = async ({ request }) => {
     return {
       success: true,
       message: "Subscription cancelled successfully.",
+    };
+  }
+
+  const block = await getSubscriptionCreateBlock(db, session.shop);
+  if (block.blocked) {
+    return {
+      success: false,
+      message: block.error,
     };
   }
 
@@ -184,7 +204,7 @@ export const action = async ({ request }) => {
 };
 
 export default function SubscriptionsPage() {
-  const { products, subscriptions } = useLoaderData();
+  const { products, subscriptions, backInStockEnabled } = useLoaderData();
   const actionData = useActionData();
   const navigation = useNavigation();
 
@@ -205,8 +225,13 @@ export default function SubscriptionsPage() {
       <s-section heading="Create a subscription">
         <s-paragraph>
           Register a customer email address for a specific product variant.
-          Email notifications are not enabled yet.
         </s-paragraph>
+        {backInStockEnabled ? null : (
+          <s-paragraph>
+            Back in Stock is turned off, so new subscriptions are not
+            accepted. Existing subscriptions can still be cancelled.
+          </s-paragraph>
+        )}
 
         <Form method="post">
           <s-stack direction="block" gap="base">

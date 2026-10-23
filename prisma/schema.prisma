@@ -33,6 +33,12 @@ model Session {
   refreshTokenExpires DateTime?
 }
 
+model ShopSetting {
+  shop               String   @id
+  backInStockEnabled Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+}
+
 model BackInStockSubscription {
   id        String   @id @default(cuid())
   shop      String

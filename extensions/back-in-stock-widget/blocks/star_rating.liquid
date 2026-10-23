@@ -1,11 +1,27 @@
-
-{% assign current_variant = product.selected_or_first_available_variant %}
+{% assign current_variant = product.selected_variant %}
+{% assign show_widget = false %}
+{% if current_variant and current_variant.available == false %}
+  {% assign show_widget = true %}
+{% endif %}
 
 <div
   class="back-in-stock-widget"
   data-product-id="{{ product.id }}"
-  data-variant-id="{{ current_variant.id }}"
+  data-variant-id="{% if show_widget %}{{ current_variant.id }}{% endif %}"
+  data-eligible="{% if show_widget %}true{% else %}false{% endif %}"
+  {% unless show_widget %}style="display:none"{% endunless %}
 >
+  <script type="application/json" class="back-in-stock-widget__variants">
+    [
+      {%- for variant in product.variants -%}
+        {
+          "id": {{ variant.id | json }},
+          "available": {{ variant.available | json }}
+        }{%- unless forloop.last -%},{%- endunless -%}
+      {%- endfor -%}
+    ]
+  </script>
+
   <h3 class="back-in-stock-widget__heading">
     {{ block.settings.heading | escape }}
   </h3>

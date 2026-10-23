@@ -1,13 +1,13 @@
 import { authenticate, unauthenticated } from "../shopify.server";
 import db from "../db.server";
-import { queueRestockNotifications } from "../services/notifications.server";
+import { applyVariantStockUpdate } from "../services/inventory-restock.server";
 
 export async function action({ request }) {
   let shop;
   let webhookId;
   let webhookRecorded = false;
 
-  try {
+  try {  
     const authenticatedWebhook = await authenticate.webhook(request);
     shop = authenticatedWebhook.shop;
     const { topic, payload } = authenticatedWebhook;
@@ -106,97 +106,32 @@ export async function action({ request }) {
         return new Response("Variant no longer exists", { status: 200 });
       }
 
-      const quantity = variant.inventoryQuantity ?? 0;
-      const isInStock = quantity > 0 && variant.availableForSale === true;
-
       console.log("Current variant stock state:", {
         shop,
         variantId,
-        quantity,
-        isInStock,
+        quantity: variant.inventoryQuantity ?? 0,
+        isInStock:
+          (variant.inventoryQuantity ?? 0) > 0 &&
+          variant.availableForSale === true,
       });
 
-      const previousState = await db.inventoryVariantState.findUnique({
-        where: { shop_variantId: { shop, variantId } },
-      });
-
-      if (!previousState) {
-        await db.inventoryVariantState.create({
-          data: { shop, variantId, inventoryQuantity: quantity, isInStock },
-        });
-
-        console.log("Initial stock state recorded; no emails sent.", {
-          shop,
-          variantId,
-          isInStock,
-        });
-
-        return Response.json({ success: true, initialized: true, sent: 0 });
-      }
-
-      await db.inventoryVariantState.update({
-        where: { id: previousState.id },
-        data: { inventoryQuantity: quantity, isInStock },
-      });
-
-      if (!isInStock) {
-        await db.backInStockSubscription.updateMany({
-          where: { shop, variantId, status: "ACTIVE" },
-          data: { notifiedAt: null },
-        });
-
-        return Response.json({
-          success: true,
-          isInStock: false,
-          sent: 0,
-        });
-      }
-
-      if (previousState.isInStock) {
-        console.log("Variant was already in stock; no emails sent.", {
-          shop,
-          variantId,
-        });
-
-        return Response.json({ success: true, restocked: false, sent: 0 });
-      }
-
-      const subscriptions = await db.backInStockSubscription.findMany({
-        where: {
-          shop,
-          variantId,
-          status: "ACTIVE",
-          notifiedAt: null,
-        },
-        select: { id: true, email: true },
-      });
-
-      const productUrl =
-        variant.product.onlineStoreUrl ||
-        `https://${shop}/products/${variant.product.handle}`;
-
-      const restockKey = previousState.updatedAt.toISOString();
-
-      const result = await queueRestockNotifications({
+      const result = await applyVariantStockUpdate({
         shop,
-        variantId,
-        productTitle: variant.product.title,
-        productUrl,
-        subscriptions,
-        restockKey,
+        variant,
+        dbClient: db,
       });
 
       console.log("Back-in-stock notification result:", {
         shop,
         variantId,
-        ...result,
+        initialized: result.initialized,
+        restocked: result.restocked,
+        queued: result.queued,
+        sent: result.sent,
+        failed: result.failed,
       });
 
-      return Response.json({
-        success: true,
-        restocked: true,
-        ...result,
-      });
+      return Response.json(result);
     } catch (error) {
       if (webhookRecorded) {
         await db.processedWebhook.deleteMany({
@@ -207,7 +142,9 @@ export async function action({ request }) {
       throw error;
     }
   } catch (error) {
-    console.error("Inventory webhook processing failed:", error);
+    console.error("Inventory webhook processing failed:", {
+      message: error.message,
+    });
     return new Response("Webhook processing failed", { status: 500 });
   }
 }

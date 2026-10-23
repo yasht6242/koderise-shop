@@ -28,10 +28,10 @@
 | Pre-order | **NOT STARTED** | No models, routes, theme blocks, or checkout integration |
 | Wishlist | **NOT STARTED** | No models/routes/theme UI |
 | Low-stock | **NOT STARTED** | No threshold settings, badges, or merchant alerts |
-| Storefront widgets | **PARTIAL** | Theme block + JS for BIS only; leftover star-rating assets; no App Embed multi-module system |
+| Storefront widgets | **PARTIAL** | BIS block hides unless the selected variant is unavailable. Rules covered by `tests/storefront-widget-state.test.js`. The full suite is 51 tests, all passed. Not verified in a live theme. The widget asks the app proxy whether Back in Stock is enabled before it submits. |
 | Customer subscription flow | **PARTIAL** | App proxy create + validation; no unsubscribe link in email; no SMS/push |
-| Merchant dashboard | **PARTIAL** | Subscriptions list/create/cancel; home still template demo; no module toggles |
-| Settings | **NOT STARTED** | No settings models/UI (email templates, thresholds, module enablement) |
+| Merchant dashboard | **PARTIAL** | Home shows live subscription and notification counts and keeps manual retry. Subscriptions is in the nav. Settings can turn Back in Stock off for the current shop. Not re-checked inside Shopify Admin in this phase. |
+| Settings | **PARTIAL** | `/app/settings` saves a per-shop Back in Stock switch in `ShopSetting`. A missing row stays enabled. The page still explains theme-block text, unavailable-variant display, one notification per restock cycle, manual retries, and that the sender is `RESEND_FROM_EMAIL` without showing its value. Live Admin save was not re-checked. |
 | Notifications (multi-channel) | **PARTIAL** | Email via Resend only; no SMS/push/WhatsApp |
 | Reporting / analytics | **NOT STARTED** | No demand reports, send metrics UI, or exports |
 | Stack / architecture recommendations | **PARTIAL** | Current stack already chosen (React Router + Prisma + SQLite local); documented in `ARCHITECTURE_AND_COSTS.md` |
@@ -42,7 +42,7 @@
 
 | Item | Status | Paths / evidence |
 | --- | --- | --- |
-| Storefront email capture | **PARTIAL** | `extensions/back-in-stock-widget/blocks/star_rating.liquid`, `assets/back-in-stock.js` — always shown; no sold-out gate; variant change not tracked |
+| Storefront email capture | **PARTIAL** | Widget submits only after an unavailable variant is resolved, and only after the app proxy reports `enabled: true`. The server also rejects creation when the module is off or the setting cannot be read. Live theme submit not re-tested in this phase. |
 | App proxy authentication | **PARTIAL** | `app/routes/proxy.jsx` uses `authenticate.public.appProxy` — verified in code; runtime not re-tested |
 | Input validation (email + GIDs) | **PARTIAL** | Regex + GraphQL product↔variant check in `proxy.jsx` |
 | Persist subscription | **PARTIAL** | `BackInStockSubscription` create; no unique constraint; race possible |
@@ -58,11 +58,11 @@
 | --- | --- | --- |
 | Theme app extension present | **PARTIAL** | `extensions/back-in-stock-widget/` |
 | Merchant block settings | **PARTIAL** | heading / description / button_text in Liquid schema |
-| Correct block naming / cleanup | **PARTIAL** | Block file still `star_rating.liquid`; `snippets/stars.liquid` + ratings locales leftover |
-| Show only when OOS | **NOT STARTED** | No availability condition in Liquid |
-| Variant selector sync | **NOT STARTED** | `data-variant-id` set once at render |
+| Correct block naming / cleanup | **PARTIAL** | Unused `snippets/stars.liquid` and ratings locale removed. Block file remains `star_rating.liquid` so existing theme placements keep working. `assets/thumbs-up.png` is still present and unused. |
+| Show only when OOS | **PARTIAL** | `variant.available == false` required. Unit-tested. Hidden with inline `display:none` so the existing `display:grid` form rule does not keep it visible. Not checked in a browser. |
+| Variant selector sync | **PARTIAL** | Reads `name="id"` in the same section or product root, then the `variant` URL parameter, then a single-variant product. Ambiguous or unknown selections stay hidden. Unit-tested. Live theme not checked. |
 | Accessibility | **PARTIAL** | `aria-live` on message; basic form labels |
-| i18n | **PARTIAL** | Merchant settings strings; leftover ratings locale JSON |
+| i18n | **PARTIAL** | Merchant heading, description, and button text remain in the block settings. Ratings locale file removed. |
 
 ---
 
@@ -74,7 +74,7 @@
 | HTML escaping | **PARTIAL** | Title/URL escaped in HTML; subject uses raw title |
 | Branded / merchant-editable templates | **NOT STARTED** | Hardcoded HTML |
 | SMS / Push / WhatsApp | **NOT STARTED** / **BLOCKED** | Not in code; cost/provider choice needs approval |
-| Test email utility | **PARTIAL** | `app/routes/app.test-email.jsx` — **unauthenticated** (security issue) |
+| Test email utility | **PARTIAL** | `app/routes/app.test-email.jsx` — now uses `authenticate.admin` (Phase 2); HTTP session integration not automated |
 
 ---
 
@@ -82,16 +82,16 @@
 
 | Item | Status | Paths / evidence |
 | --- | --- | --- |
-| Durable notification records | **PARTIAL** | `BackInStockNotification` model + migration |
-| Statuses PENDING / SENDING / SENT / FAILED | **PARTIAL** | Set in `notifications.server.js` |
-| Dedup per restock cycle | **PARTIAL** | `@@unique([subscriptionId, restockKey])` |
-| Atomic claim before send | **PARTIAL** | `updateMany` status claim |
+| Durable notification records | **PARTIAL** | Model + Phase 2 enqueue-before-state-update; covered by `tests/inventory-restock.test.js` |
+| Statuses PENDING / SENDING / SENT / FAILED | **PARTIAL** | Set in `notifications.server.js`; unit-tested |
+| Dedup per restock cycle | **PARTIAL** | Unique key + tests for duplicate restockKey |
+| Atomic claim before send | **PARTIAL** | `updateMany` claim; concurrent send/retry tests pass |
 | Manual retry route (admin) | **PARTIAL** | `app/routes/app.retry-notifications.jsx` + home UI |
-| Automated / scheduled retry worker | **NOT STARTED** | No cron, queue worker process, or Shopify Flow schedule |
-| Retry limits + exponential backoff | **PARTIAL** | Max 5 attempts; backoff in `retryFailedNotifications` |
-| Stale SENDING recovery | **PARTIAL** | 10-minute threshold in retry helper only |
-| Dead-letter handling | **PARTIAL** | Exhausted attempts remain FAILED; no DLQ UI/alert |
-| Provider idempotency / duplicate-email prevention | **NOT STARTED** | At-least-once delivery risk documented in audit |
+| Automated / scheduled retry worker | **PARTIAL** | `POST /internal/notification-retries` is secret-protected and tested. No host scheduler is configured, so local retries stay on the manual button. |
+| Retry limits + exponential backoff | **PARTIAL** | Max 5; backoff tested |
+| Stale SENDING recovery | **PARTIAL** | 10-minute threshold; tested in `notifications-retry.test.js` |
+| Dead-letter handling | **PARTIAL** | Exhausted attempts remain FAILED; cancelled subs forced to max attempts |
+| Provider idempotency / duplicate-email prevention | **NOT STARTED** | At-least-once residual risk remains (documented in Phase 2) |
 
 ---
 
@@ -104,7 +104,7 @@
 | Duplicate webhook ID protection | **PARTIAL** | `ProcessedWebhook`; delete-on-failure for retries |
 | OOS → IS transition detection | **PARTIAL** | `InventoryVariantState` comparison |
 | Reset eligibility when OOS again | **PARTIAL** | Clears `notifiedAt` on OOS |
-| Safe ordering (state vs queue durability) | **PARTIAL** | State updated before queue — crash can skip emails |
+| Safe ordering (state vs queue durability) | **PARTIAL** | Phase 2: jobs enqueued before `isInStock` flip (`inventory-restock.server.js`); unit-tested. Not fully crash-proof at OS level. |
 | Multi-location correctness | **PARTIAL** / **BLOCKED** | Uses aggregated variant quantity; not location-aware; needs product decision |
 | GraphQL throttling / transient retries | **NOT STARTED** | Failures bubble to 500 / FAILED |
 
@@ -149,7 +149,7 @@
 | Embedded app shell | **PARTIAL** | `app/routes/app.jsx` App Bridge + Polaris web components |
 | Subscription management UI | **PARTIAL** | `app/routes/app.subscriptions.jsx` — not in nav; stale “emails not enabled” copy |
 | Inventory debug view | **PARTIAL** | `app/routes/app.additional.jsx` |
-| Module enable/disable settings | **NOT STARTED** | — |
+| Module enable/disable settings | **PARTIAL** | Per-shop `ShopSetting.backInStockEnabled`. Disabled shops reject new storefront and merchant subscriptions, keep existing subscriptions cancellable, and hold unsent jobs. Re-enable uses the existing retry rules and does not bulk-send. Covered by `tests/shop-settings.test.js`. Not verified in a live Shopify Admin session. |
 | Widget/email customization settings | **NOT STARTED** | Beyond theme block settings |
 | Clean merchant home (non-template) | **NOT STARTED** | `app._index.jsx` still template product generator |
 
@@ -193,10 +193,10 @@
 
 | Item | Status | Paths / evidence |
 | --- | --- | --- |
-| Prisma schema + migrations present | **PARTIAL** | Six migrations; SQLite local |
+| Prisma schema + migrations present | **PARTIAL** | Seven migrations; SQLite local. `20261021153000_add_shop_setting` was applied with `prisma migrate deploy`. `prisma generate` updated the client source, then failed to replace the locked query-engine DLL (`EPERM`). |
 | Production-ready DB | **NOT STARTED** | Still SQLite hardcoded URL |
-| BIS-related tables | **PARTIAL** | Subscriptions, webhooks, inventory state, notification queue |
-| Preorder/wishlist/settings tables | **NOT STARTED** | — |
+| BIS-related tables | **PARTIAL** | Subscriptions, webhooks, inventory state, notification queue, per-shop `ShopSetting` |
+| Preorder/wishlist/settings tables | **PARTIAL** | `ShopSetting` only. No preorder or wishlist tables. |
 
 ---
 
@@ -207,7 +207,7 @@
 | In-process queue table | **PARTIAL** | `BackInStockNotification` |
 | Webhook-inline send | **PARTIAL** | Sends during webhook request (scalability risk) |
 | Separate worker / Redis / BullMQ | **NOT STARTED** | — |
-| Scheduled retries | **NOT STARTED** | Manual only |
+| Scheduled retries | **PARTIAL** | Route and recovery rules are in place. Automatic execution is not active until a future host scheduler is approved and configured. |
 
 ---
 
@@ -226,8 +226,8 @@
 
 | Item | Status | Paths / evidence |
 | --- | --- | --- |
-| Unit / integration / e2e tests | **NOT STARTED** | No test files; no `test` script |
-| Lint / typecheck scripts | **PARTIAL** | Scripts exist; not run in Phase 1 |
+| Unit / integration / e2e tests | **PARTIAL** | `npm test` passed with 51 `node:test` cases (mocked), including Phase 6 shop-setting cases. No browser E2E / live Shopify tests |
+| Lint / typecheck scripts | **PARTIAL** | Phase 6 re-run: lint, typecheck, and build passed |
 | CI pipeline | **NOT STARTED** | No GitHub Actions / similar found |
 
 ---
@@ -249,9 +249,9 @@
 
 | Status | Count (rows above) |
 | --- | --- |
-| DONE | **0** (nothing re-verified by automated/manual test in this audit) |
-| PARTIAL | Majority of existing BIS / auth / webhook work |
-| NOT STARTED | Preorder, wishlist, low-stock, settings, reporting, tests, scheduled workers, monitoring |
+| DONE | **0** for full production BIS (live store E2E still required); several unit cases now pass in Phase 2 |
+| PARTIAL | BIS pipeline, retries, auth, webhooks, new automated unit tests |
+| NOT STARTED | Preorder, wishlist, low-stock, reporting, scheduled workers, monitoring |
 | BLOCKED | Reference-app parity, multi-channel notifications, paid hosting/SMS, some legal/product decisions |
 
 ---
