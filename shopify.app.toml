@@ -3,7 +3,7 @@
 client_id = "d90c534d5d018970a1620e041b821af3"
 application_url = "https://example.com"
 embedded = true
-name = "koderise-shopi-dev"
+name = "KR Back in Stock + Wishlist."
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
